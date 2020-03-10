@@ -1,0 +1,300 @@
+<?php 	
+session_start();
+$DEBUG=0;
+?>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<META HTTP-EQUIV="Pragma" CONTENT="no-cache">
+<META HTTP-EQUIV="Expires" CONTENT="-1">
+<!--[if lt IE 7.]>
+<script defer type="text/javascript" src="/js/fixpng.js"></script>
+<![endif]-->
+<title>SMEC</title>
+<link rel="stylesheet" type="text/css" href="/css/my_style.css">
+<script language="javascript">
+
+function dept_onchange(SubmitSelect) 
+{
+   SubmitSelect.submit();
+}
+function SetHoraTxtBox(a,b,c,d)
+{
+	var item1=document.getElementById('hini');
+	var item2=document.getElementById('hfin');
+	var item3=document.getElementById('mini');
+	var item4=document.getElementById('mfin');
+	item1.value=a;
+	item2.value=b;
+	item3.value=c;
+	item4.value=d;
+}
+function ValidarHora()
+{
+	var item1=document.getElementById('hini');
+	var item2=document.getElementById('hfin');
+	var item3=document.getElementById('mini');
+	var item4=document.getElementById('mfin');
+	var val1=item1.value;	var val2=item2.value;
+	var val3=item3.value;	var val4=item4.value;
+  // Horas
+	if (!IsNumeric(val1))		item1.value=0;
+	if (!IsNumeric(val2))		item2.value=23;
+	// Minutos
+	if (!IsNumeric(val3))		item3.value=0;
+	if (!IsNumeric(val4))		item4.value=59;
+  // Horas
+	if(val1 < 0)	item1.value=0;
+	if(val1 > 23)	item1.value=23;
+	if(val2 < 0)	item2.value=0;
+	if(val2 > 23)	item2.value=23;
+	// Minutos
+	if(val3 < 0)	item3.value=0;
+	if(val3 > 59)	item3.value=59;
+	if(val4 < 0)	item4.value=0;
+	if(val4 > 59)	item4.value=59;
+}
+function IsNumeric(strString)
+{
+   var strValidChars = "0123456789",strChar,blnResult= true,i;
+   if (strString.length == 0) return false;
+   for (i = 0; i < strString.length && blnResult == true; i++)
+   {
+      strChar = strString.charAt(i);
+      if (strValidChars.indexOf(strChar) == -1)
+         blnResult = false;
+   }
+   return blnResult;
+}
+
+</script>
+<script language="javascript" type="text/javascript" src="js/excanvas.js"></script>
+<script language="javascript" type="text/javascript" src="js/jquery.js"></script>
+<script language="javascript" type="text/javascript" src="js/jquery.flot.js"></script>
+<script language="javascript" type="text/javascript" src="js/jquery.flot.navigate.js"></script> 
+<style>
+    #placeholder .button,     #placeholder0 .button,    #placeholder1 .button,    #placeholder2 .button,    #placeholder3 .button {
+        position: absolute;
+        cursor: pointer;
+    }
+    #placeholder div.button,#placeholder0 div.button,#placeholder1 div.button,#placeholder2 div.button,#placeholder3 div.button {
+        font-size: smaller;
+        color: #999;
+        background-color: #eee;
+        padding: 2px;
+    }
+	#tooltip {
+		position: absolute;
+		padding: 4px;
+		opacity: 0;
+		-moz-border-radius: 4px;
+		-webkit-border-radius: 4px;
+	}
+
+</style>
+
+</head>
+<body>
+<div style='background-color:Lavender;border:solid 1px DarkSlateGray;margin-bottom:2px'><h1 style='text-align:center;color:#22A;font-size:1.8em;font-style:italic;margin:10px 0px;text-shadow: 0.05em 0.05em 0.1em gray'>Consulta de Datos Hist&oacute;ricos SMEC</h1></div>
+<?php
+include("../header.php");
+require_once ('../Calendar/cal_class.php');
+$esta_pagina="smec.php";
+
+
+/* Pasa tiempo de formato latino a USA y devuelve time_t */
+function parsedate($value)
+{
+    // If it looks like a UK date dd/mm/yy, reformat to US date mm/dd/yy so strtotime can parse it.
+    $reformatted = preg_replace("/^\s*([0-9]{1,2})[\/\. -]+([0-9]{1,2})[\/\. -]+([0-9]{1,4})/", "\\2/\\1/\\3", $value);
+    return strtotime($reformatted);
+}
+
+
+
+$refer= $_SERVER['HTTP_REFERER'];
+
+$IMG_W=1200;
+$IMG_H=450;
+
+
+
+/* Acceso a la base de datos */
+
+$USAR_LUPA=0;
+$user="usuario";
+$password="";
+$database="webtrend";
+$stat=mysql_connect("localhost",$user, $password);
+if($stat)
+	@mysql_select_db($database) or die("<b>Cannot connect to database $database </b><br></br>");
+else
+	die("<b>Dying. Cannot connect to database $database </b><br></br>");
+
+
+/* Veo si viene un time_span, sino coloco por defecto */
+$time_span=$_POST['span_combo'];
+if(strlen($time_span)< 1)
+	$time_span=3; // 6 horas
+$combo_span_cambio=0;
+if (!isset($_SESSION['span_combo'])) 
+   $_SESSION['span_combo'] = $time_span; // Guardo por primera vez el span del combo
+else
+{
+	if($_SESSION['span_combo']!=$time_span) // Cambio desde el combo
+	{
+		$_SESSION['span_combo'] = $time_span; // Guardo de vuelta
+		$combo_span_cambio=1;
+	}
+			
+}
+
+
+/* Para seleccionar un tag  arbitrario de la BD */
+$tag_selector_get=0;
+if(isset($_GET['tag_selector']))
+{
+	// Veo que tipo de seleccion de tags me piden. Un numero= todos, d discretos, a analogicos. 
+	$tipo_tags=$_GET['tag_selector'];
+	$tag_selector_get=1;
+}
+
+/* Pocesamiento POST-GET  */
+$title_get=$_GET['title'];
+if (strlen($title_get)<1)
+{
+	$title_get="(Sin titulo)";
+}
+$tagnames=array();
+$n_graphs=0;
+$MAX_GRAPHS=6;
+if($tag_selector_get) 
+{
+	// Busco los posibles tags seleccionados de los combos
+	for($i=0;$i<$MAX_GRAPHS;$i++)
+	{
+		$combo_ver="multi_selector_$i";
+		$aux=$_POST["$combo_ver"];
+		$tagnames_raw[$i]=$aux;
+		if (strlen($aux) > 0 && ($aux!="---"))
+		{
+			$tagnames[$n_graphs]=$aux;
+			$n_graphs++;
+		}
+	}
+}
+else
+{
+	for($j=0;$j<$MAX_GRAPHS;$j++)
+	{
+		$tag_ver="tag$j";
+		$aux=$_GET["$tag_ver"];
+		if (strlen($aux) > 0)
+		{
+			$tagnames[$n_graphs++]=$aux;
+		}
+	}
+
+}
+
+if(isset($_GET['agrupar']))
+	$agrupar=$_GET['agrupar'];
+elseif(isset($_POST['agrupar']))
+	$agrupar=$_POST['agrupar'];
+	
+
+// **************************************************************
+// Formulario con  los botones de ajuste y zoom
+echo "<table style='background-color:#e5e5e5;border:solid DarkSlateGray 1px;color:#330;margin-bottom:3px;font-style:italic;padding:0px 2px;font-size:12px'>";
+echo "<tr><td>";
+	$accion="$esta_pagina?".$_SERVER['QUERY_STRING'];
+	// Veo si venía de un query por fecha la consulta anterior por default
+	if(isset($_POST['query_por_fecha_x'])) 
+	{
+		$dini=$_POST['finicio'];
+		$dfin=$_POST['ffin'];
+	}
+	else
+	{
+		$dini=date("d/m/Y");
+		$dfin=date("d/m/Y");
+		$hfinaux=date("H"); // Hora actuales
+		$mfinaux=date("i"); // Minutos actuales
+	}
+	echo "<FORM NAME='myForm' ACTION='$accion' METHOD='POST' style='margin:0px;padding:0px'>";
+	echo "<script language='javascript' type='text/javascript' src='../Calendar/calendar.core.js'></script>";
+	/* Agrego los calendarios */
+	echo "<div style='display:inline;margin:0px 5px 0px 0px;position:relative;top:-10px'>";
+	echo "Fecha";
+	$calendario=new Calendar("it");
+	$calendario->grandezza_carattere="Small";
+	$calendario->sfondo_settimana="Darkkhaki";
+	$calendario->CreateCalendar($dini,"finicio",date("m/d/Y"),"12/31/2006");
+    echo " Hora <input id='hini' style='font-size:xx-small;height:22px;width:22px' type=text maxlength='2' size=2 name='hini' onchange='return ValidarHora();' value=00>";
+    echo " Min <input id='mini' style='font-size:xx-small;height:22px;width:22px' type=text maxlength='2' size=2 name='mini' onchange='return ValidarHora();' value=00>";
+    echo "</div>";
+	echo "<div style='padding-left:4px;display:inline;margin:0px;position:relative;top:-10px'>";
+	echo "Fecha Fin";
+	$calendario=new Calendar("it");
+	$calendario->grandezza_carattere="Small";
+	$calendario->sfondo_settimana="Darkkhaki";
+	$calendario->CreateCalendar($dfin,"ffin",date("m/d/Y"),"12/31/2006");
+    echo " Hora <input id='hfin' style='font-size:xx-small;height:22px;width:22px' type=text maxlength='2' size=2 name='hfin' onchange='return ValidarHora();' value=$hfinaux>";
+    echo " Min. <input id='mfin' style='font-size:xx-small;height:22px;width:22px' type=text maxlength='2' size=2 name='mfin' onchange='return ValidarHora();' value=$mfinaux>";
+    echo "<input type='image' src='/images/search.png' alt='Consultar' name='query_por_fecha' value='1' title='Consultar por fechas utilizando el calendario' class='btn-sgp' style='width:37px;height:33px;position:relative;top:14px;margin-left:15px;'>\n";
+    echo "</div>";
+echo "</td></tr>";
+echo "</table>";
+
+// Para volver
+if(strpos(strtolower($refer),'trend')<=0) // No viene del propio trending
+{
+	// Guardo la pagina de referencia 	
+	echo "<input type='hidden' name='refer' value='$refer'></input>";
+	$volver_a=$refer;
+	 // Como no viene del propio trending reseteo las variables de sesion
+   $_SESSION['start_time'] = -1;
+   $_SESSION['end_time'] = -1;
+	
+}
+else	// Viene del trending
+{
+	// re-obtengo la pagina de referencia y la vuelvo a guardar
+	$volver_a=$_POST['refer'];
+	echo "<input type='hidden' name='refer' value='$volver_a'></input>";
+}
+
+
+if(isset($query_por_fecha)) // Los tiempos son por fecha, usando el calendario
+{
+	//echo "QUERY POR FECHA";
+	$finicio=$_POST['finicio'];
+	$ffin=$_POST['ffin'];
+	$hini=$_POST['hini'];
+	$hfin=$_POST['hfin'];
+	$mini=$_POST['mini'];
+	$mfin=$_POST['mfin'];
+	// Seteo los valores en los textboxes
+	echo "<script>SetHoraTxtBox($hini,$hfin,$mini,$mfin);</script>";
+	$start_time=parsedate($finicio) +  3600 *$hini + 60 *$mini;
+	$end_time=parsedate($ffin) +  3600 *$hfin + 60 *$mfin+59;
+}
+
+// Almaceno las variables de sesion
+$_SESSION['start_time']=$start_time;
+$_SESSION['end_time']=$end_time;
+
+
+
+
+//echo $start_time."   ".$end_time; die();
+if(($end_time-$start_time) <=0 )
+	die("Error:Intervalo de fechas erroneo.");
+$formatted_start_time=date("Y-m-d H:i:s",$start_time);
+$formatted_end_time=date("Y-m-d H:i:s",$end_time);
+
+
+
+?>
+</body>
+</html>

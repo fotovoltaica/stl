@@ -1,0 +1,49 @@
+#!/bin/sh
+/* Acceso a la base de datos */
+    $host="localhost";
+    $name = "arduino";
+    $passwd = "ArduinO2015";
+    $dbname = "subtilis";
+
+	$stat = mysql_connect($host, $name, $passwd);
+	if(!$stat)
+	{
+    die('No pudo conectarse: ' . mysql_error());
+	}
+	//echo 'Conectado satisfactoriamente';
+
+	mysql_select_db($dbname, $stat);
+	
+	$q1="select Amps, t_P1, fechahora from planta_reciclado ORDER BY fechahora DESC LIMIT ";	
+	
+	$q2="8640";
+	$q=$q1 . $q2;
+	mysql_query($q) > output.txt;
+	$rs=mysql_query($q); 
+	$num=mysql_numrows($rs);
+	
+	# For each even line (i.e. containing the count(*) result), test if count(*) != 0
+line_number=1
+for line in `cat output.txt`; do
+  if [ $((line_number % 2)) -eq 0 ]; then
+    if [ $line -ne 0 ]; then
+      `( echo "Here is your report"; uuencode output.txt output.txt ) | mail -s "SQL report" f.estavillo@ieee.org`
+      exit
+    fi
+  fi
+  line_number=$((line_number + 1))
+done
+	
+	//$num=10000;
+	$nreg=0;
+		while($num--)
+			{
+				$valor[$nreg]=mysql_result($rs,$num,"Amps");
+				$t_P1[$nreg]=mysql_result($rs,$num,"t_P1");
+				$fechahora[$nreg]=mysql_result($rs,$num,"fechahora");
+				//echo $fechahora[$nreg];
+				//echo '<br>';
+				$nreg++;
+			}
+	mysql_close($stat);
+	
